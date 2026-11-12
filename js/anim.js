@@ -122,7 +122,7 @@ export const SLOT_X = [-0.85, 0, 0.85];
 export function newFigure(slot, model) {
   const keys = Object.fromEntries(CHANNELS.map(c => [c, []]));
   keys.body.push({ f: 0, v: { p: [SLOT_X[slot] ?? 0, 0, 0], r: 0, b: structuredClone(POSES.stehen.b) } });
-  return { slot, model, blink: true, keys };
+  return { slot, model, blink: true, size: 1, keys };
 }
 export function newProject() { return { v: 1, title: 'Mein Film', len: 10, place: 'klasse', figs: [], clips: [], voices: {} }; }
 

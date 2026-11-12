@@ -48,11 +48,21 @@ function changed() { poke(); tl.draw(); refreshPanel(); syncKeyActs(); scheduleS
 let loadingN = 0;
 function loading(d, txt) { loadingN += d; $('loading').hidden = loadingN <= 0; if (txt) $('loading').querySelector('span').textContent = txt; }
 // Schlüssel einer Figur: ändert er sich, wird sie neu geladen (Farben gehen ohne Neuladen, siehe applyLook)
-const figKey = pf => pf.model + (pf.look ? '|' + lookKey(pf.look) : '');
+const lookOf = pf => pf.look || (MODEL_BY[pf.model] || {}).parts;   // eigene Figur oder fest zusammengestellte
+const figKey = pf => pf.model + (lookOf(pf) ? '|' + lookKey(lookOf(pf)) : '');
+const HEAD_Y = 1.5;   // alle Menschen-Figuren gleich groß (Kopf auf 1,5 m), die Größe stellen die Kinder selbst ein
+const busy = {};      // pro Platz höchstens eine Ladung: Wer schnell mehrfach tippt, bekommt nur die letzte Wahl
+// Die alte Figur bleibt stehen, bis die neue da ist: keine Lücke, und die neue übernimmt ihre fertig übersetzten Shader
+const retired = {};
+const retire = slot => { if (retired[slot]) { disposeFigure(retired[slot]); delete retired[slot]; } };
 function syncFigures() {
   for (const slot of Object.keys(RT)) {
     const pf = P.figs.find(f => f.slot === +slot), rt = RT[slot];
-    if (!pf || figKey(pf) !== rt.key) { if (rt.fig) { disposeFigure(rt.fig); stage.scene.remove(rt.handles.group); } delete RT[slot]; }
+    if (!pf || figKey(pf) !== rt.key) {
+      if (rt.fig) { stage.scene.remove(rt.handles.group); retire(slot); retired[slot] = rt.fig; }
+      if (!pf) retire(slot);
+      delete RT[slot];
+    }
     else if (rt.fig && pf.look) applyLook(rt.fig, pf.look);
   }
   for (const pf of P.figs) if (!RT[pf.slot]) loadSlot(pf);
@@ -63,18 +73,30 @@ function syncFigures() {
 async function loadSlot(pf) {
   const rt = RT[pf.slot] = { model: pf.model, key: figKey(pf), fig: null }, name = nameOf(pf);
   loading(1, `Lade ${name} …`);
+  while (busy[pf.slot]) await busy[pf.slot];
+  if (RT[pf.slot] !== rt) { loading(-1); return; }
+  let done; busy[pf.slot] = new Promise(r => { done = r; });
   try {
-    const prog = p => loading(0, `Lade ${name} … ${Math.round(p * 100)} %`);
-    const fig = pf.look ? await loadCustom(pf.look, prog) : await loadFigure(`figuren/${pf.model}.vrm`, prog);
+    const prog = p => loading(0, `Lade ${name} … ${Math.round(p * 100)} %`), L = lookOf(pf);
+    const fig = L ? await loadCustom(L, prog) : await loadFigure(`figuren/${pf.model}.vrm`, prog);
     if (RT[pf.slot] !== rt) { disposeFigure(fig); return; }
-    rt.fig = fig; stage.scene.add(fig.root); poke();
+    // Shader vorab (im Hintergrund, wenn der Browser das kann), solange die alte Figur ihre noch bereithält
+    if (stage.renderer.extensions.has('KHR_parallel_shader_compile')) await stage.renderer.compileAsync(fig.root, stage.camera, stage.scene).catch(() => {});
+    else stage.renderer.compile(fig.root, stage.camera, stage.scene);
+    if (RT[pf.slot] !== rt) { disposeFigure(fig); return; }
+    fig.root.updateMatrixWorld(true);
+    rt.norm = MODEL_BY[pf.model].kind === 'wesen' ? 1 : HEAD_Y / fig.bone('head').getWorldPosition(new THREE.Vector3()).y;
+    rt.fig = fig; stage.scene.add(fig.root); retire(pf.slot); poke();
     rt.handles = makeHandles(fig, COLORS[pf.slot]); stage.scene.add(rt.handles.group);
     rt.ring = new THREE.Mesh(new THREE.RingGeometry(.34, .39, 48), new THREE.MeshBasicMaterial({ color: COLORS[pf.slot], transparent: true, opacity: .85, depthWrite: false }));
     rt.ring.rotation.x = -Math.PI / 2; rt.ring.position.y = .012; fig.root.add(rt.ring);
     poseFig(pf, rt, UI.frame, 0); fig.vrm.springBoneManager && fig.vrm.springBoneManager.reset();
     renderPanel(); if (pf.slot === UI.selFig && UI.tab === 'face') camTo('face');
   } catch (e) { console.error(e); toast(`${name} ließ sich nicht laden`); if (RT[pf.slot] === rt) delete RT[pf.slot]; }
-  loading(-1);
+  finally {
+    busy[pf.slot] = null; done(); loading(-1); if (RT[pf.slot] === rt || !RT[pf.slot]) retire(pf.slot);
+    const n = $('slots').querySelector(`.slot[data-slot="${pf.slot}"] .note`); if (n && RT[pf.slot] === rt) n.textContent = nameOf(pf);
+  }
 }
 
 // ---------- Jedes Bild: Werte ausrechnen und anwenden ----------
@@ -89,7 +111,7 @@ function poseFig(pf, rt, ft, dt) {
   const face = { brow: v.brow, eye: { ...v.eye }, mouth: v.mouth, talk: { ...v.talk } };
   if (pf.blink) { const b = blinkAt(pf.slot, t); if (b > 0) face.eye.Close = Math.max(face.eye.Close || 0, b); }
   const lip = lipAt(P, pf.slot, t); if (lip) for (const k in lip) face.talk[k] = Math.max(face.talk[k] || 0, lip[k]);
-  applyBody(rt.fig, v.body); applyHead(rt.fig, v.head); applyFaceBefore(rt.fig, face, v.head);
+  applyBody(rt.fig, v.body); rt.fig.root.scale.setScalar(rt.norm * (pf.size || 1)); applyHead(rt.fig, v.head); applyFaceBefore(rt.fig, face, v.head);
   rt.fig.vrm.update(dt);
   if (rt.fig.eyeLink) for (const [from, to] of rt.fig.eyeLink) to.quaternion.copy(from.quaternion);   // eigene Figuren: Blick aufs mitgebrachte Gesicht
   applyFaceAfter(rt.fig, face);
@@ -310,14 +332,14 @@ function camTo(kind) {
   poke();
   const rt = selRT();
   if (kind === 'all' || !rt) { stage.flyTo(new THREE.Vector3(0, 1.25, 4.4), new THREE.Vector3(0, 1, 0)); return; }
-  const r = rt.fig.root.rotation.y, fwd = new THREE.Vector3(Math.sin(r), 0, Math.cos(r));
+  const r = rt.fig.root.rotation.y, fwd = new THREE.Vector3(Math.sin(r), 0, Math.cos(r)), sc = rt.fig.root.scale.x;
   if (kind === 'face') {
     // Ziel: Mitte zwischen Hals und Kopf-Oberkante, Abstand nach Kopfgröße (VRoid-Kopf ≈ 0,29 m → 0,78 m)
-    const hs = rt.fig.headSize, neck = (rt.fig.bone('neck') || rt.fig.bone('head')).getWorldPosition(new THREE.Vector3());
+    const hs = rt.fig.headSize * sc, neck = (rt.fig.bone('neck') || rt.fig.bone('head')).getWorldPosition(new THREE.Vector3());
     const hp = neck.add(new THREE.Vector3(0, hs * .5, 0));
     stage.flyTo(hp.clone().addScaledVector(fwd, Math.max(.7, hs * 2.7)).add(new THREE.Vector3(0, .02, 0)), hp);
   } else {
-    const H = rt.fig.height, mid = rt.fig.root.position.clone().add(new THREE.Vector3(0, H * .5, 0));
+    const H = rt.fig.height * sc, mid = rt.fig.root.position.clone().add(new THREE.Vector3(0, H * .5, 0));
     stage.flyTo(mid.clone().addScaledVector(fwd, Math.max(2.2, H * 1.7)).add(new THREE.Vector3(0, .25, 0)), mid);
   }
 }
@@ -387,7 +409,9 @@ function renderPanel() {
       <div class="row"><button data-move class="${UI.moveMode ? 'accent' : ''}">✋ ${UI.moveMode ? 'Verschieben an' : 'Verschieben'}</button>
         <button data-turn="-45">↺ 45°</button><button data-turn="45">↻ 45°</button></div>
       <div class="str">Drehen <input type="range" min="-180" max="180" step="5" data-rot></div>
-      <div class="str">Höhe (Hüpfen) <input type="range" min="0" max="80" step="1" data-hop></div>`;
+      <div class="str">Höhe (Hüpfen) <input type="range" min="0" max="80" step="1" data-hop></div>
+      <h3>Größe <span class="note" data-sizev></span></h3>
+      <div class="str">kleiner <input type="range" min="60" max="140" step="5" data-size> größer</div>`;
   } else {
     const name = pf ? esc(nameOf(pf)) : '';
     $('tabSound').innerHTML = `${pf ? `<h3>Stimme von ${name}</h3>
@@ -422,6 +446,7 @@ function refreshPanel() {
     const bv = evalCh(pf, 'body', UI.frame);
     const r = document.querySelector('[data-rot]'); if (r) r.value = ((bv.r + 180) % 360 + 360) % 360 - 180;
     const hop = document.querySelector('[data-hop]'); if (hop) hop.value = Math.round(bv.p[1] * 100);
+    const sz = document.querySelector('[data-size]'); if (sz) { sz.value = Math.round((pf.size || 1) * 100); document.querySelector('[data-sizev]').textContent = sz.value + ' %'; }
     const k = document.querySelector('[data-kd="body"]'); if (k) k.textContent = kd('body');
   }
 }
@@ -480,6 +505,7 @@ $('tabBody').addEventListener('input', e => {
   if (!selPF()) return; const d = e.target.dataset;
   if (d.rot !== undefined) { once(); const v = curVal('body'); v.r = +e.target.value; keyNow('body', v); }
   if (d.hop !== undefined) { once(); const v = curVal('body'); v.p[1] = e.target.value / 100; keyNow('body', v); }
+  if (d.size !== undefined) { once(); selPF().size = e.target.value / 100; document.querySelector('[data-sizev]').textContent = e.target.value + ' %'; poke(); scheduleSave(); }
 });
 
 // Auf der Bühne: Gelenk-Punkte ziehen, Figur verschieben, Figur antippen
@@ -632,7 +658,7 @@ function renderFigDialog() {
   $('slots').innerHTML = [0, 1, 2].map(s => {
     const pf = P.figs.find(f => f.slot === s), m = pf && MODEL_BY[pf.model];
     return `<div class="slot ${s === dSlot ? 'on' : ''}" data-slot="${s}" style="color:${COLORS[s]}">${m ? `<img src="figuren/${m.id}.png" alt="">` : '<div class="ph">＋</div>'}
-      <div style="color:var(--text)"><b>Platz ${s + 1}</b><br><span class="note">${m ? esc(nameOf(pf)) : 'leer'}</span></div>${m ? '<button class="x" data-del>✕</button>' : ''}</div>`;
+      <div style="color:var(--text)"><b>Platz ${s + 1}</b><br><span class="note">${m ? esc(nameOf(pf)) + (RT[s] && !RT[s].fig ? ' · lädt …' : '') : 'leer'}</span></div>${m ? '<button class="x" data-del>✕</button>' : ''}</div>`;
   }).join('');
   const cur = P.figs.find(f => f.slot === dSlot);
   const card = m => `<button class="card ${cur && cur.model === m.id ? 'on' : ''}" data-model="${m.id}"><img src="figuren/${m.id}.png" alt="" loading="lazy">${m.name}</button>`;
@@ -652,6 +678,7 @@ function lookEditor(pf) {
     <div class="lrow"><b>Frisur</b><div class="row">${chips('hair', PARTS.hair)}</div></div>
     <div class="lrow"><b>Haarfarbe</b><div class="row">${dots('hairColor', PARTS.hairColor)}</div></div>
     <div class="lrow"><b>Outfit</b><div class="row">${chips('outfit', PARTS.outfit)}</div></div>
+    <div class="lrow"><b>Farbe Oberteil</b><div class="row">${dots('top', PARTS.top)}</div></div>
     <div class="lrow"><b>Hautfarbe</b><div class="row">${dots('skin', PARTS.skin)}</div></div></div>`;
 }
 $('dFig').addEventListener('click', e => {
@@ -716,7 +743,7 @@ $('mNew').onclick = () => { if (!confirm('Wirklich einen neuen Film anfangen? De
 function cleanLook(l, def) {
   l = l && typeof l === 'object' ? l : {}; const o = {};
   for (const k of ['outfit', 'face', 'hair']) o[k] = PARTS[k].some(([id]) => id === l[k]) ? l[k] : def[k];
-  for (const k of ['hairColor', 'skin']) o[k] = PARTS[k].includes(l[k] ?? null) ? (l[k] ?? null) : def[k];
+  for (const k of ['hairColor', 'skin', 'top']) o[k] = PARTS[k].includes(l[k] ?? null) ? (l[k] ?? null) : def[k];
   return o;
 }
 // Geladene Dateien prüfen: nur bekannte Felder mit passenden Typen übernehmen
@@ -728,7 +755,7 @@ function sanitize(o) {
   const seen = new Set();
   for (const f of o.figs.slice(0, 3)) {
     const slot = num(f.slot, -1); if (![0, 1, 2].includes(slot) || seen.has(slot) || !MODEL_BY[f.model]) continue; seen.add(slot);
-    const nf = newFigure(slot, f.model); nf.blink = f.blink !== false;
+    const nf = newFigure(slot, f.model); nf.blink = f.blink !== false; nf.size = clamp(num(f.size, 1), .6, 1.4);
     if (MODEL_BY[f.model].look) nf.look = cleanLook(f.look, MODEL_BY[f.model].look);
     if (MODEL_BY[f.model].look && typeof f.name === 'string') nf.name = f.name.slice(0, 14);
     for (const ch of CHANNELS) {

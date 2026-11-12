@@ -34,6 +34,7 @@ fetch('orte/farben.json').then(r => r.json()).then(j => { COLORS = j; }).catch((
 
 export function makeStage(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.debug.checkShaderErrors = false;   // sonst wartet jedes neue Material, bis die Grafikkarte fertig übersetzt hat (Stocken beim Laden)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();

@@ -8,13 +8,17 @@ import { BODY_BONES, FACE, FACE_CH, eulerQ } from './anim.js';
 // anime: VRoid-Beispielfiguren von pixiv, volles Gesicht (Brauen, Augen, Mund einzeln).
 // wesen: 100Avatars Reihe 3 von Polygonal Mind, Gefühle wirken aufs ganze Gesicht, dazu Sprechen und Blinzeln.
 // eigen: selbst zusammengestellt aus Gesicht, Frisur und Outfit verschiedener VRoid-Figuren (siehe loadCustom).
-const A = (id, name) => ({ id, name, kind: 'anime' }), W = (id, name) => ({ id, name, kind: 'wesen' });
+// Mit parts: fest zusammengestellt wie eine eigene Figur. Alle tragen Hose oder Hoodie (die Röcke der Vorlagen sind nicht im Spiel).
+const A = (id, name, parts) => ({ id, name, kind: 'anime', parts }), W = (id, name) => ({ id, name, kind: 'wesen' });
 const E = (id, name, look) => ({ id, name, kind: 'eigen', look });
+const L = (outfit, face, hair, hairColor = null, skin = null, top = null) => ({ outfit, face, hair, hairColor, skin, top });
 export const MODELS = [
-  E('eigen1', 'Eigene 1', { outfit: 'kaito', face: 'fumiriya', hair: 'basis', hairColor: '#3b2a20', skin: null }),
-  E('eigen2', 'Eigene 2', { outfit: 'kaito', face: 'shibu', hair: 'vivi', hairColor: '#1d1b22', skin: '#d9a882' }),
-  A('fumiriya', 'Haru'), A('kaito', 'Kaito'), A('hiro', 'Hiro'), A('yuki', 'Yuki'), A('shibu', 'Aiko'), A('shino', 'Nami'), A('sakura', 'Sakura'), A('mika', 'Mika'),
-  A('darkshibu', 'Rin'), A('victoria', 'Hana'), A('vivi', 'Momo'),
+  E('eigen1', 'Eigene 1', L('kaito', 'fumiriya', 'basis', '#3b2a20')),
+  E('eigen2', 'Eigene 2', L('kaito', 'shibu', 'vivi', '#1d1b22', '#d9a882', '#e94b4b')),
+  A('fumiriya', 'Haru'), A('kaito', 'Kaito'), A('hiro', 'Hiro', L('fumiriya', 'fumiriya', 'basis', '#1d1b22', '#7d4f32', '#9fc3ff')),
+  A('shibu', 'Nami', L('fumiriya', 'shibu', 'shibu', null, null, '#8a5cc8')), A('victoria', 'Hana', L('kaito', 'victoria', 'victoria', null, null, '#f5d547')),
+  A('yui', 'Yui', L('kaito', 'shibu', 'shino', '#4a6fd0', '#b07a52', '#5cc46a')), A('emi', 'Emi', L('fumiriya', 'victoria', 'darkshibu', '#e7c983', '#7d4f32', '#f2a33a')),
+  A('kana', 'Kana', L('fumiriya', 'shibu', 'kaito', '#6b4a32', '#f3d2b8', '#4a90e2')),
   W('tiger', 'Tiger'), W('fuchs', 'Füchsin'), W('hai', 'Hai'), W('kiba', 'Kiba'), W('katze', 'Katze'), W('nekomata', 'Nekomata'),
   W('dino', 'Dino'), W('hoernchen', 'Eichhörnchen'), W('biene', 'Biene'), W('yeti', 'Yeti'), W('zyklop', 'Zyklop'), W('ziegengeist', 'Ziegengeist'),
   W('crowley', 'Kapuzenkater'), W('feuerauge', 'Feuerauge'), W('motte', 'Mottenkatze'),
@@ -24,12 +28,13 @@ export const MODEL_BY = Object.fromEntries(MODELS.map(m => [m.id, m]));
 
 // Bausteine für eigene Figuren: Datei-ID → Name. „basis“ ist das VRoid-Grundmodell (nur für die Raspelkurz-Frisur).
 export const PARTS = {
-  face: [['fumiriya', 'Haru'], ['kaito', 'Kaito'], ['shibu', 'Aiko'], ['shino', 'Nami'], ['mika', 'Mika'], ['darkshibu', 'Rin'], ['victoria', 'Hana'], ['vivi', 'Momo']],
+  face: [['fumiriya', 'Haru'], ['shibu', 'Nami'], ['victoria', 'Hana']],
   hair: [['basis', 'Raspelkurz'], ['fumiriya', 'Wuschelig'], ['kaito', 'Fransig'], ['shibu', 'Bob'], ['darkshibu', 'Bob mit Strähnen'], ['vivi', 'Kurz mit Knoten'],
     ['shino', 'Lang'], ['victoria', 'Seitenzopf'], ['mika', 'Zöpfe mit Katzenohren']],
-  outfit: [['kaito', 'Hoodie'], ['fumiriya', 'Schuluniform mit Hose'], ['shibu', 'Schuluniform mit Rock'], ['darkshibu', 'Gothic-Kleid'], ['victoria', 'Rüschenkleid'], ['vivi', 'Sommerkleid']],
+  outfit: [['kaito', 'Hoodie'], ['fumiriya', 'Schuluniform']],
   hairColor: [null, '#1d1b22', '#3b2a20', '#6b4a32', '#a8743f', '#e7c983', '#c9cfd8', '#b73a2e', '#d97aa8', '#4a6fd0', '#4fa37a', '#8a5cc8'],
   skin: [null, '#fff1e6', '#f3d2b8', '#d9a882', '#b07a52', '#7d4f32', '#4f3122'],
+  top: [null, '#e94b4b', '#f2a33a', '#f5d547', '#5cc46a', '#9fc3ff', '#4a90e2', '#8a5cc8', '#ef8fb8', '#555b66'],
 };
 export const lookKey = l => [l.outfit, l.face, l.hair].join('+');   // ändert sich das, muss neu zusammengesetzt werden
 
@@ -55,7 +60,7 @@ export const HANDLES = {
   rightFoot: H('Fuß rechts', ['rightFoot'], 'rightFoot', 'rightToes', [0, -.05, .1]),
 };
 
-export async function loadFigure(url, onProgress) {
+export async function loadFigure(url, onProgress, measure = true) {
   const g = await loader.loadAsync(url, e => onProgress && e.total && onProgress(e.loaded / e.total));
   const vrm = g.userData.vrm; if (!vrm) throw new Error('keine VRM-Datei');
   const v0 = vrm.meta && vrm.meta.metaVersion === '0';
@@ -86,10 +91,15 @@ export async function loadFigure(url, onProgress) {
   root.updateMatrixWorld(true);
   fig.swapBlink = moved(em, 'blinkLeft', 'pos') < 0;
   fig.swapLook = moved(em, 'lookLeft', 'delta') < 0;
-  // Kopfgröße für die Gesichts-Kamera (große Tierköpfe brauchen mehr Abstand)
-  const top = new THREE.Box3().setFromObject(vrm.scene).max.y, neck = fig.bone('neck') || fig.bone('head');
-  fig.headSize = Math.max(.2, top - neck.getWorldPosition(new THREE.Vector3()).y); fig.height = top;
+  if (measure) measureFig(fig);
   return fig;
+}
+// Kopfgröße für die Gesichts-Kamera (große Tierköpfe brauchen mehr Abstand). Rechnet jeden Punkt mit seinen Knochen durch,
+// darum nur einmal pro Figur. Umgebundene Teile tragen noch die Maße vom Spender-Skelett: die werden verworfen.
+function measureFig(fig) {
+  fig.vrm.scene.updateMatrixWorld(true); fig.vrm.scene.traverse(o => { if (o.isSkinnedMesh) o.boundingBox = null; });
+  const top = new THREE.Box3().setFromObject(fig.vrm.scene).max.y, neck = fig.bone('neck') || fig.bone('head');
+  fig.headSize = Math.max(.2, top - neck.getWorldPosition(new THREE.Vector3()).y); fig.height = top;
 }
 
 // ---------- Eigene Figuren: Teile verschiedener VRoid-Figuren zusammensetzen ----------
@@ -99,15 +109,14 @@ export async function loadFigure(url, onProgress) {
 export async function loadCustom(look, onProgress) {
   const ids = [...new Set([look.outfit, look.face, look.hair])], prog = {}, got = {};
   await Promise.all(ids.map(async id => {
-    got[id] = await loadFigure(`figuren/${id}.vrm`, p => { prog[id] = p; onProgress && onProgress(ids.reduce((s, k) => s + (prog[k] || 0), 0) / ids.length); });
+    got[id] = await loadFigure(`figuren/${id}.vrm`, p => { prog[id] = p; onProgress && onProgress(ids.reduce((s, k) => s + (prog[k] || 0), 0) / ids.length); }, false);
   }));
   const fig = got[look.outfit];
   if (look.face !== look.outfit) transplant(fig, got[look.face], 'face');
   if (look.hair !== look.outfit) transplant(fig, got[look.hair], 'hair');
   for (const id of ids) if (got[id] !== fig) disposeFigure(got[id]);
   fig.vrm.springBoneManager.setInitState();
-  const top = new THREE.Box3().setFromObject(fig.vrm.scene).max.y, neck = fig.bone('neck') || fig.bone('head');
-  fig.headSize = Math.max(.2, top - neck.getWorldPosition(new THREE.Vector3()).y); fig.height = top;
+  measureFig(fig);
   applyLook(fig, look);
   return fig;
 }
@@ -161,13 +170,14 @@ export function applyLook(fig, look) {
     for (const m of [].concat(o.material)) {
       if (!m || !m.isMToonMaterial) continue;
       const n = (m.name || '').toUpperCase();
-      if (!n.includes('SKIN') && !n.includes('HAIR')) continue;
+      if (!n.includes('SKIN') && !n.includes('HAIR') && !n.includes('TOPS')) continue;
       const O = m.userData.orig || (m.userData.orig = { color: m.color.clone(), shade: m.shadeColorFactor.clone(), emissive: m.emissive.clone(), map: m.map, shadeTex: m.shadeMultiplyTexture });
       m.color.copy(O.color); m.shadeColorFactor.copy(O.shade); m.emissive.copy(O.emissive);
       if (n.includes('SKIN') && look.skin) {
         const t = new THREE.Color(look.skin), k = new THREE.Color(Math.min(1, t.r / SKIN0.r), Math.min(1, t.g / SKIN0.g), Math.min(1, t.b / SKIN0.b));
         m.color.multiply(k); m.shadeColorFactor.multiply(k);
       }
+      if (n.includes('TOPS') && look.top) { const t = new THREE.Color(look.top); m.color.multiply(t); m.shadeColorFactor.multiply(t); }   // Oberteil einfärben
       if (n.includes('HAIR')) {
         const c = look.hairColor && new THREE.Color(look.hairColor), map = c ? grayOf(O.map) : O.map, sh = c ? grayOf(O.shadeTex) : O.shadeTex;
         if (m.map !== map || m.shadeMultiplyTexture !== sh) { m.map = map; m.shadeMultiplyTexture = sh; m.needsUpdate = true; }
@@ -180,8 +190,10 @@ export function applyLook(fig, look) {
 function grayOf(tex) {
   if (!tex || !tex.image) return tex;
   if (tex.userData.gray) return tex.userData.gray;
-  const img = tex.image, w = img.width, h = img.height, c = document.createElement('canvas'); c.width = w; c.height = h;
-  const x = c.getContext('2d'); x.drawImage(img, 0, 0); const d = x.getImageData(0, 0, w, h), a = d.data, hist = new Uint32Array(256); let n = 0;
+  // auf höchstens 512 px: Haarbilder sind weiche Verläufe, und das Umrechnen geht viermal schneller (blockiert sonst das Tippen)
+  const img = tex.image, k = Math.min(1, 512 / Math.max(img.width, img.height)), w = Math.round(img.width * k), h = Math.round(img.height * k);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, w, h); const d = x.getImageData(0, 0, w, h), a = d.data, hist = new Uint32Array(256); let n = 0;
   for (let i = 0; i < a.length; i += 4) if (a[i + 3] > 25) { hist[(a[i] * 77 + a[i + 1] * 150 + a[i + 2] * 29) >> 8]++; n++; }
   const pct = q => { let s = 0; for (let i = 0; i < 256; i++) { s += hist[i]; if (s >= n * q) return i; } return 255; };
   const lo = pct(.05), hi = Math.max(lo + 1, pct(.98)), base = .45;
