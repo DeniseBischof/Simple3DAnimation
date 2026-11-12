@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#14161c">
+<title>Mimik-Studio</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎭</text></svg>">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/":"./vendor/addons/","@pixiv/three-vrm":"./vendor/three-vrm.module.min.js"}}</script>
+</head>
+<body>
+<header id="top">
+  <div class="brand">🎭 <b>Mimik</b>-Studio</div>
+  <button id="bFig" class="tb">👥 Figuren</button>
+  <button id="bPlace" class="tb">🏞️ Ort</button>
+  <span class="grow"></span>
+  <button id="bUndo" class="tb icon" title="Rückgängig">↶</button>
+  <button id="bRedo" class="tb icon" title="Wiederholen">↷</button>
+  <button id="bFilm" class="tb accent">🎬 Film ansehen</button>
+  <button id="bHelp" class="tb icon" title="Hilfe">?</button>
+  <button id="bMenu" class="tb icon" title="Menü">☰</button>
+</header>
+
+<main id="work">
+  <div id="view">
+    <canvas id="c3d"></canvas>
+    <div id="camBar">
+      <button data-cam="all">Bühne</button><button data-cam="body">Körper</button><button data-cam="face">Gesicht</button>
+    </div>
+    <div id="jointName" hidden></div>
+    <div id="loading" hidden><div class="spin"></div><span>Lade Figur …</span></div>
+    <div id="empty" hidden>
+      <p>Willkommen im <b>Mimik-Studio</b>!<br>Sucht euch bis zu drei Figuren aus.</p>
+      <button id="bFig2" class="big accent">👥 Figuren aussuchen</button>
+    </div>
+    <div id="filmExit" hidden>Tippen zum Beenden</div>
+  </div>
+
+  <aside id="panel">
+    <div id="figChips"></div>
+    <nav class="tabs">
+      <button data-tab="face" class="on">🙂 Gesicht</button><button data-tab="body">🕺 Körper</button><button data-tab="sound">🔊 Ton</button>
+    </nav>
+    <section id="tabFace" class="tab"></section>
+    <section id="tabBody" class="tab" hidden></section>
+    <section id="tabSound" class="tab" hidden></section>
+  </aside>
+</main>
+
+<footer id="tl">
+  <div id="transport">
+    <button id="tStart" title="An den Anfang">⏮</button>
+    <button id="tPrev" title="Ein Bild zurück">◀︎</button>
+    <button id="tPlay" class="play" title="Abspielen">▶</button>
+    <button id="tNext" title="Ein Bild vor">▶︎</button>
+    <span id="tTime">0,0 s</span>
+    <span class="sep"></span>
+    <button id="kPrev" title="Zum vorigen Schlüsselbild">⟨◆</button>
+    <button id="kNext" title="Zum nächsten Schlüsselbild">◆⟩</button>
+    <span class="sep"></span>
+    <span id="keyActs">
+      <button id="kDel" title="Ausgewähltes löschen">🗑</button>
+      <button id="kCopy" title="Schlüsselbild kopieren">Kopieren</button>
+      <button id="kPaste" title="Am Abspielkopf einfügen">Einfügen</button>
+      <button id="kEase" title="Übergang zu diesem Schlüsselbild">weich</button>
+    </span>
+    <span class="grow"></span>
+    <label class="tog"><input type="checkbox" id="tProfi"> Profi-Spuren</label>
+    <select id="tLen" title="Filmlänge"></select>
+  </div>
+  <div id="tlScroll"><canvas id="tlc"></canvas></div>
+</footer>
+
+<div id="toast" hidden></div>
+
+<dialog id="dFig">
+  <h2>Figuren</h2>
+  <p class="sub">Bis zu drei Figuren. Tippt auf einen Platz und dann auf eine Figur.</p>
+  <div id="slots"></div>
+  <div id="models" class="grid"></div>
+  <div class="row end"><button class="big" data-close>Fertig</button></div>
+</dialog>
+
+<dialog id="dPlace">
+  <h2>Ort</h2>
+  <div id="places" class="grid wide"></div>
+  <div class="row end"><button class="big" data-close>Fertig</button></div>
+</dialog>
+
+<dialog id="dMenu">
+  <h2>Film</h2>
+  <label class="field">Titel <input id="mTitle" maxlength="40"></label>
+  <div class="col">
+    <button id="mVideo" class="big accent">🎞️ Film als Video speichern (MP4)</button>
+    <button id="mSave" class="big">💾 Film als Datei speichern</button>
+    <button id="mOpen" class="big">📂 Film-Datei öffnen</button>
+    <button id="mNew" class="big danger">🆕 Neuer Film</button>
+    <button id="mAbout" class="big">ℹ️ Über / Lizenzen</button>
+  </div>
+  <div class="row end"><button class="big" data-close>Schließen</button></div>
+</dialog>
+
+<dialog id="dHelp">
+  <h2>So geht Animation</h2>
+  <ol class="help">
+    <li>Stellt die <b class="yel">gelbe Linie</b> (Abspielkopf) in der Zeitleiste auf eine Zeit.</li>
+    <li>Verändert Gesicht oder Körper. Dabei entsteht von selbst ein <b>Schlüsselbild ◆</b>.</li>
+    <li>Schiebt die gelbe Linie weiter und verändert wieder etwas. <b>Dazwischen rechnet der Computer die Bewegung aus.</b></li>
+    <li>Mit <b>▶</b> seht ihr, was passiert. Mit <b>🎬 Film ansehen</b> läuft es groß.</li>
+  </ol>
+  <h3>Tipps wie bei den Profis</h3>
+  <ul class="help">
+    <li><b>Erst der Körper, dann das Gesicht, dann das Sprechen.</b> Schaltet „Profi-Spuren“ ein, dann seht ihr jede Spur einzeln.</li>
+    <li><b>Plötzlich oder weich?</b> Wählt ein Schlüsselbild aus und tippt auf „weich“. Dann springt es auf „plötzlich“, gut zum Blinzeln oder Erschrecken.</li>
+    <li><b>Die Augen zuerst:</b> Schaut eine Figur erst hin und dreht dann den Kopf, wirkt sie lebendig.</li>
+    <li><b>Ausholen:</b> Bevor jemand springt oder wirft, geht er kurz in die Gegenrichtung.</li>
+    <li><b>Halten:</b> Ein Gefühl wirkt erst, wenn es kurz stehen bleibt. Setzt dasselbe Gesicht etwas später noch einmal.</li>
+    <li><b>Sprechen:</b> Nehmt im Ton-Bereich eure Stimme auf, dann bewegt sich der Mund von selbst. Brauen und Augen spielt ihr dazu.</li>
+  </ul>
+  <div class="row end"><button class="big" data-close>Los geht's</button></div>
+</dialog>
+
+<dialog id="dAbout">
+  <h2>Über das Mimik-Studio</h2>
+  <p>Figuren: offizielle VRoid-Beispielfiguren von pixiv (Sakurada Fumiriya, Sendagaya Shibu, Sendagaya Shino, Darkness Shibu, Victoria Rubin, Vivi und weitere), Lizenz <b>CC0</b>. Wesen, Tiere und Roboter: <b>100Avatars</b> von Polygonal Mind, Lizenz <b>CC0</b>.</p>
+  <p>Orte: 360°-Fotos von <b>Poly Haven</b> (polyhaven.com), Lizenz <b>CC0</b>. Bäume, Pflanzen und Häuser in den Anime-Szenen: <b>Quaternius</b> und <b>Kenney</b>, Lizenz <b>CC0</b>.</p>
+  <p>Technik: three.js (MIT) und three-vrm von pixiv (MIT). Geräusche und Musik werden im Browser erzeugt.</p>
+  <p>Alles bleibt auf diesem Gerät. Nichts wird hochgeladen.</p>
+  <div class="row end"><button class="big" data-close>Schließen</button></div>
+</dialog>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
